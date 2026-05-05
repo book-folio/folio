@@ -870,26 +870,14 @@ function deleteBook(id){
   toast('Deleted');
 }
 
-/* ── JSONP HELPER (works from file://, GitHub Pages, anywhere) ── */
-function jsonp(url, cbParam='callback'){
-  return new Promise((resolve, reject)=>{
-    const fnName='_jp'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
-    const timeout=setTimeout(()=>{
-      delete window[fnName];
-      if(script.parentNode)script.parentNode.removeChild(script);
-      reject(new Error('timeout'));
-    }, 8000);
-    window[fnName]=function(data){
-      clearTimeout(timeout);
-      delete window[fnName];
-      if(script.parentNode)script.parentNode.removeChild(script);
-      resolve(data);
-    };
-    const script=document.createElement('script');
-    script.src=url+(url.includes('?')?'&':'?')+cbParam+'='+fnName;
-    script.onerror=()=>{clearTimeout(timeout);delete window[fnName];reject(new Error('load error'));};
-    document.head.appendChild(script);
-  });
+/* ── OPEN LIBRARY API (fetch — works on GitHub Pages / any https host) ── */
+async function olSearch(params){
+  // Must always explicitly request fields due to OL breaking change Jan 2025
+  const base='https://openlibrary.org/search.json?';
+  const url=base+params+'&fields=title,author_name,cover_i,isbn,number_of_pages_median,subject&limit=10';
+  const r=await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
 }
 
 /* ── BOOK SEARCH & AUTOFILL ── */
@@ -899,8 +887,7 @@ async function schBooks(){
   const res=document.getElementById('sch-results');
   res.innerHTML='<div style="font-size:12px;color:var(--t2)">Searching…</div>';
   try{
-    const url='https://openlibrary.org/search.json?q='+encodeURIComponent(q)+'&fields=title,author_name,cover_i,isbn,number_of_pages_median,subject&limit=6';
-    const d=await jsonp(url);
+    const d=await olSearch('q='+encodeURIComponent(q));
     const docs=(d.docs||[]).slice(0,6);
     if(!docs.length){res.innerHTML='<div style="font-size:12px;color:var(--t2)">No results found.</div>';return;}
     window._schDocs=docs;
@@ -920,7 +907,7 @@ async function schBooks(){
     }).join('');
   }catch(e){
     console.error('Book search error:',e);
-    res.innerHTML='<div style="font-size:12px;color:var(--red)">Search failed. Make sure you are connected to the internet.</div>';
+    res.innerHTML='<div style="font-size:12px;color:var(--red)">Search failed. Are you on the live GitHub Pages site?</div>';
   }
 }
 
@@ -944,7 +931,7 @@ function autofillBook(idx){
   }
   document.getElementById('sch-results').innerHTML='<div style="font-size:12px;color:var(--grn)">✓ Filled — review details and save</div>';
   document.getElementById('sch-q').value='';
-  toast('Book details filled in ✓');
+  toast('Book details filled ✓');
 }
 
 /* ── COVER SEARCH ── */
@@ -956,8 +943,7 @@ async function searchCov(){
   const gridEl=document.getElementById('cov-grid');
   stEl.textContent='Searching…'; gridEl.innerHTML='';
   try{
-    const url='https://openlibrary.org/search.json?q='+encodeURIComponent(q)+'&fields=cover_i,title&limit=20';
-    const d=await jsonp(url);
+    const d=await olSearch('q='+encodeURIComponent(q));
     const ids=(d.docs||[]).map(x=>x.cover_i).filter(Boolean).slice(0,12);
     if(!ids.length){stEl.textContent='No covers found. Try a different title or use the URL option below.';return;}
     stEl.textContent=ids.length+' covers found — click to select';
@@ -1247,18 +1233,17 @@ async function doScan(){
   document.getElementById('scan-r').innerHTML='<div style="font-size:13px;color:var(--t2)">Searching…</div>';
   try{
     const isISBN=/^[0-9\-X]{9,17}$/.test(q.replace(/-/g,''));
-    let bd=null;
-    if(isISBN){
-      // ISBN: search API with isbn filter (JSONP compatible)
-      const d=await jsonp(`https://openlibrary.org/search.json?isbn=${encodeURIComponent(q)}&limit=1`);
-      const doc=(d.docs||[])[0];
-      if(doc) bd={title:doc.title,author:(doc.author_name||[''])[0]||'',pages:doc.number_of_pages_median||'',isbn:q,cover:doc.cover_i?`https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`:''};
-    } else {
-      const d=await jsonp(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=1`);
-      const doc=(d.docs||[])[0];
-      if(doc) bd={title:doc.title,author:(doc.author_name||[''])[0]||'',pages:doc.number_of_pages_median||'',isbn:(doc.isbn||[])[0]||'',cover:doc.cover_i?`https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`:''};
-    }
-    if(!bd){noRes();return;}
+    const params=isISBN?'isbn='+encodeURIComponent(q.replace(/-/g,'')):'q='+encodeURIComponent(q);
+    const d=await olSearch(params+'&limit=1');
+    const doc=(d.docs||[])[0];
+    if(!doc){noRes();return;}
+    const bd={
+      title:doc.title||'',
+      author:(doc.author_name||[])[0]||'',
+      pages:doc.number_of_pages_median||'',
+      isbn:(doc.isbn||[])[0]||q,
+      cover:doc.cover_i?`https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`:''
+    };
     window._lastScan=bd;
     document.getElementById('scan-r').innerHTML=`<div class="scan-res">
       ${bd.cover?`<div style="width:60px;aspect-ratio:2/3;border-radius:6px;overflow:hidden;flex-shrink:0"><img src="${esc(bd.cover)}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.style.display='none'"></div>`:''}
