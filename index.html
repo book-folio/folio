@@ -795,10 +795,28 @@ function renderTags(){
   c.appendChild(inp);
 }
 
+/* ── DUPLICATE CHECK ── */
+function findDupe(title,isbn){
+  const tNorm=title.trim().toLowerCase();
+  return books.find(b=>{
+    if(b.id===editId) return false; // skip self when editing
+    // match by ISBN if both have one
+    if(isbn&&b.isbn&&isbn.replace(/-/g,'')===b.isbn.replace(/-/g,'')) return true;
+    // match by normalised title
+    return b.title.trim().toLowerCase()===tNorm;
+  });
+}
+
 /* ── SAVE BOOK ── */
 function saveBook(){
   const title=document.getElementById('f-ti').value.trim();
   if(!title){toast('Please enter a title');return;}
+  const isbn=document.getElementById('f-isbn').value.trim();
+  const dupe=findDupe(title,isbn);
+  if(dupe){
+    const msg=`"${dupe.title}" is already in your library (${dupe.status}).\n\nSave anyway?`;
+    if(!confirm(msg)) return;
+  }
   const ci=document.getElementById('cp-img');
   const cover=ci.style.display!=='none'?ci.src:'';
   const book={
@@ -916,6 +934,23 @@ async function schBooks(){
 }
 
 function autofillBook(idx){
+  const doc=window._schDocs&&window._schDocs[idx];
+  if(!doc)return;
+  const title=doc.title||'';
+  const isbn=(doc.isbn||[])[0]||'';
+  const dupe=findDupe(title,isbn);
+  if(dupe){
+    document.getElementById('sch-results').innerHTML=
+      `<div style="font-size:12px;color:var(--gld);background:var(--gld-l);padding:.5rem .7rem;border-radius:var(--rs)">
+        ⚠️ <strong>"${esc(dupe.title)}"</strong> is already in your library with status <strong>${esc(dupe.status)}</strong>.
+        <button class="btn sm" style="margin-left:.5rem" onclick="forceAutofill(${idx})">Fill anyway</button>
+      </div>`;
+    return;
+  }
+  doAutofill(idx);
+}
+function forceAutofill(idx){ doAutofill(idx); }
+function doAutofill(idx){
   const doc=window._schDocs&&window._schDocs[idx];
   if(!doc)return;
   document.getElementById('f-ti').value=doc.title||'';
