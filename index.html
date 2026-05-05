@@ -870,12 +870,16 @@ function deleteBook(id){
   toast('Deleted');
 }
 
-/* ── OPEN LIBRARY API (fetch — works on GitHub Pages / any https host) ── */
+/* ── OPEN LIBRARY API via CORS proxy ── */
+// OL does not send CORS headers so direct browser fetch is blocked.
+// corsproxy.io adds the required headers transparently.
+const PROXY='https://corsproxy.io/?url=';
 async function olSearch(params){
-  // Must always explicitly request fields due to OL breaking change Jan 2025
-  const base='https://openlibrary.org/search.json?';
-  const url=base+params+'&fields=title,author_name,cover_i,isbn,number_of_pages_median,subject&limit=10';
-  const r=await fetch(url);
+  const target=encodeURIComponent(
+    'https://openlibrary.org/search.json?'+params+
+    '&fields=title,author_name,cover_i,isbn,number_of_pages_median,subject&limit=10'
+  );
+  const r=await fetch(PROXY+target);
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }
