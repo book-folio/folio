@@ -394,7 +394,7 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
     <div class="sw"><input class="si" id="lq" placeholder="Search title, author, series…" oninput="renderLib()"></div>
     <select class="fsel" id="lst" onchange="renderLib()"><option value="">All statuses</option><option>Read</option><option>Reading</option><option>Want to read</option><option>Plan to read</option><option>Not finished</option><option>Abandoned</option></select>
     <select class="fsel" id="lgn" onchange="renderLib()"><option value="">All genres</option></select>
-    <select class="fsel" id="lso" onchange="renderLib()"><option value="added">Recently added</option><option value="title">Title A–Z</option><option value="author">Author A–Z</option><option value="rating">Highest rated</option><option value="fin">Recently finished</option></select>
+    <select class="fsel" id="lso" onchange="renderLib()"><option value="num">Book # (default)</option><option value="added">Recently added</option><option value="title">Title A–Z</option><option value="author">Author A–Z</option><option value="rating">Highest rated</option><option value="fin">Recently finished</option></select>
   </div>
   <div id="lib-c"></div>
 </div>
@@ -796,13 +796,17 @@ function renderTags(){
 }
 
 /* ── DUPLICATE CHECK ── */
+/* ── BOOK NUMBERING ── */
+function nextBookNum(){
+  if(!books.length) return 1;
+  return Math.max(...books.map(b=>b.num||0))+1;
+}
+
 function findDupe(title,isbn){
   const tNorm=title.trim().toLowerCase();
   return books.find(b=>{
-    if(b.id===editId) return false; // skip self when editing
-    // match by ISBN if both have one
+    if(b.id===editId) return false;
     if(isbn&&b.isbn&&isbn.replace(/-/g,'')===b.isbn.replace(/-/g,'')) return true;
-    // match by normalised title
     return b.title.trim().toLowerCase()===tNorm;
   });
 }
@@ -814,13 +818,17 @@ function saveBook(){
   const isbn=document.getElementById('f-isbn').value.trim();
   const dupe=findDupe(title,isbn);
   if(dupe){
-    const msg=`"${dupe.title}" is already in your library (${dupe.status}).\n\nSave anyway?`;
-    if(!confirm(msg)) return;
+    const numLabel=dupe.num?` (Book #${dupe.num})`:'';
+    alert(`"${dupe.title}"${numLabel} is already in your library with status: ${dupe.status}.\n\nNot saved.`);
+    return;
   }
   const ci=document.getElementById('cp-img');
   const cover=ci.style.display!=='none'?ci.src:'';
+  const existing=editId?books.find(x=>x.id===editId):null;
   const book={
-    id:editId||uid(), title,
+    id:editId||uid(),
+    num:existing?existing.num:nextBookNum(),
+    title,
     author:document.getElementById('f-au').value.trim(),
     genre:document.getElementById('f-gn').value.trim(),
     series:document.getElementById('f-sr').value.trim(),
@@ -832,12 +840,12 @@ function saveBook(){
     isbn:document.getElementById('f-isbn').value.trim(),
     status:document.getElementById('f-st').value,
     rating:curRat, tags:curTags.slice(), cover,
-    notes:editId?(books.find(x=>x.id===editId)||{}).notes||[]:[],
-    quotes:editId?(books.find(x=>x.id===editId)||{}).quotes||[]:[],
-    addedAt:editId?(books.find(x=>x.id===editId)||{}).addedAt||new Date().toISOString():new Date().toISOString()
+    notes:existing?existing.notes||[]:[],
+    quotes:existing?existing.quotes||[]:[],
+    addedAt:existing?existing.addedAt||new Date().toISOString():new Date().toISOString()
   };
-  if(editId){books=books.map(b=>b.id===editId?book:b);toast('Book updated ✓');}
-  else{books.unshift(book);toast('Book added ✓');}
+  if(editId){books=books.map(b=>b.id===editId?book:b);toast(`#${book.num} updated ✓`);}
+  else{books.push(book);toast(`#${book.num} — "${book.title}" added ✓`);}
   save(); closeM('m-add'); renderDashboard(); updGenreDL(); buildTicker();
   const ap=document.querySelector('[id^="p-"]:not([style*="none"])');
   if(ap&&ap.id==='p-library')renderLib();
@@ -940,10 +948,10 @@ function autofillBook(idx){
   const isbn=(doc.isbn||[])[0]||'';
   const dupe=findDupe(title,isbn);
   if(dupe){
+    const numLabel=dupe.num?` (Book #${dupe.num})`:'';
     document.getElementById('sch-results').innerHTML=
       `<div style="font-size:12px;color:var(--gld);background:var(--gld-l);padding:.5rem .7rem;border-radius:var(--rs)">
-        ⚠️ <strong>"${esc(dupe.title)}"</strong> is already in your library with status <strong>${esc(dupe.status)}</strong>.
-        <button class="btn sm" style="margin-left:.5rem" onclick="forceAutofill(${idx})">Fill anyway</button>
+        ⚠️ <strong>"${esc(dupe.title)}"</strong> is already in your library as <strong>Book #${dupe.num||'?'}</strong> with status <strong>${esc(dupe.status)}</strong>. Not added.
       </div>`;
     return;
   }
@@ -1023,6 +1031,7 @@ function bCard(b){
   const sc=statusCls(b.status);
   return`<div class="bc" onclick="openDetail('${b.id}')">
     <div class="bcov">${b.cover?`<img src="${esc(b.cover)}" alt="${esc(b.title)}" loading="lazy">`:covPH(b)}
+      ${b.num?`<div style="position:absolute;top:5px;left:5px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;line-height:1.4">#${b.num}</div>`:''}
       ${b.status==='Reading'?`<div class="bprog"><div class="bprog-f" style="width:${b.progress||0}%"></div></div>`:''}
     </div>
     <div class="bb">
@@ -1041,6 +1050,7 @@ function openDetail(id){
     <div style="display:flex;gap:1.1rem;margin-bottom:1.1rem">
       <div style="width:88px;aspect-ratio:2/3;border-radius:var(--rs);overflow:hidden;flex-shrink:0;background:var(--bg2)">${b.cover?`<img src="${esc(b.cover)}" style="width:100%;height:100%;object-fit:cover">`:covPH(b,'88px','132px')}</div>
       <div style="flex:1;min-width:0">
+        ${b.num?`<div style="font-size:11px;font-weight:700;color:var(--acc);letter-spacing:.04em;margin-bottom:.3rem">BOOK #${b.num}</div>`:''}
         <div style="font-family:var(--ff);font-size:1.05rem;font-weight:600;margin-bottom:3px;line-height:1.3">${esc(b.title)}</div>
         <div style="font-size:13px;color:var(--t2);margin-bottom:.45rem">${esc(b.author||'')}</div>
         ${b.series?`<div style="font-size:12px;color:var(--t3);margin-bottom:.35rem">📚 ${esc(b.series)}${b.seriesNum?' #'+b.seriesNum:''}</div>`:''}
@@ -1108,12 +1118,13 @@ function renderLib(){
   else if(so==='author')f.sort((a,b)=>(a.author||'').localeCompare(b.author||''));
   else if(so==='rating')f.sort((a,b)=>(b.rating||0)-(a.rating||0));
   else if(so==='fin')f.sort((a,b)=>(b.end||'').localeCompare(a.end||''));
-  else f.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
+  else if(so==='added')f.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
+  else f.sort((a,b)=>(a.num||0)-(b.num||0)); // default: by number
   document.getElementById('lib-sub').textContent=`${f.length} book${f.length!==1?'s':''}${f.length!==books.length?' (filtered)':''}`;
   const c=document.getElementById('lib-c');
   if(!f.length){c.innerHTML='<div class="empty"><div class="ei">🔍</div><div class="et">No books found</div><div class="es">Adjust filters or add new books</div></div>';return;}
   if(libView==='grid'){c.innerHTML=`<div class="bgrid">${f.map(bCard).join('')}</div>`;}
-  else{c.innerHTML=`<div class="card" style="padding:.35rem .85rem">${f.map(b=>`<div class="bli" onclick="openDetail('${b.id}')"><div class="bl-cov">${b.cover?`<img src="${esc(b.cover)}" style="width:100%;height:100%;object-fit:cover">`:covPH(b,'38px','57px')}</div><div class="bl-inf"><div style="font-weight:600;font-size:13.5px;margin-bottom:1px">${esc(b.title)}</div><div style="font-size:11.5px;color:var(--t2)">${esc(b.author||'')}${b.series?` · <span style="color:var(--t3)">${esc(b.series)}${b.seriesNum?' #'+b.seriesNum:''}</span>`:''}</div>${b.tags&&b.tags.length?`<div style="margin-top:.28rem;display:flex;flex-wrap:wrap;gap:.22rem">${b.tags.map(t=>`<span class="tch" style="font-size:10px">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="bl-r"><span class="pl ${statusCls(b.status)}" style="font-size:10px">${esc(b.status)}</span>${b.rating?`<span style="font-size:11.5px;color:var(--gld)">${'★'.repeat(b.rating)}</span>`:''}${b.end?`<span style="font-size:11px;color:var(--t3)">${fmtD(b.end)}</span>`:''}</div></div>`).join('')}</div>`;}
+  else{c.innerHTML=`<div class="card" style="padding:.35rem .85rem">${f.map(b=>`<div class="bli" onclick="openDetail('${b.id}')"><div class="bl-cov">${b.cover?`<img src="${esc(b.cover)}" style="width:100%;height:100%;object-fit:cover">`:covPH(b,'38px','57px')}</div><div class="bl-inf"><div style="font-weight:600;font-size:13.5px;margin-bottom:1px">${b.num?`<span style="font-size:10px;font-weight:700;color:var(--acc);margin-right:.35rem">#${b.num}</span>`:''}${esc(b.title)}</div><div style="font-size:11.5px;color:var(--t2)">${esc(b.author||'')}${b.series?` · <span style="color:var(--t3)">${esc(b.series)}${b.seriesNum?' #'+b.seriesNum:''}</span>`:''}</div>${b.tags&&b.tags.length?`<div style="margin-top:.28rem;display:flex;flex-wrap:wrap;gap:.22rem">${b.tags.map(t=>`<span class="tch" style="font-size:10px">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="bl-r"><span class="pl ${statusCls(b.status)}" style="font-size:10px">${esc(b.status)}</span>${b.rating?`<span style="font-size:11.5px;color:var(--gld)">${'★'.repeat(b.rating)}</span>`:''}${b.end?`<span style="font-size:11px;color:var(--t3)">${fmtD(b.end)}</span>`:''}</div></div>`).join('')}</div>`;}
 }
 function updGenreDL(){
   const genres=[...new Set(books.map(b=>b.genre).filter(Boolean))].sort();
